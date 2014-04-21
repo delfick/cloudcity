@@ -6,6 +6,8 @@ multiple cloudformation stacks that depend on each other.
 
 It's similar to the ideas in `cumulous <https://github.com/cotdsa/cumulus>`_.
 
+Note:: This is far from working!! And time is a commodity I don't have much of :(
+
 Installation
 ------------
 

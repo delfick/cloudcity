@@ -6,10 +6,15 @@ setup(
     , packages = ['cloudcity'] + ['cloudcity.%s' % pkg for pkg in find_packages('cloudcity')]
     , include_package_data = True
 
+    , install_requires =
+      [ 'option_merge'
+      ]
+
     , extras_require =
       { "tests":
         [ "noseOfYeti>=1.4.9"
         , "nose"
+        , "mock"
         ]
       }
 
