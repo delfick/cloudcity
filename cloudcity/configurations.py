@@ -139,17 +139,24 @@ class Configurations(object):
             as_options["global"] = MergedOptions()
 
         template = MergedOptionStringFormatter(as_options, config_only=True)
-        resolve_order = as_options["global"].get("resolve_order", "").split(',')
-        resolve_order = [template.format(part) for part in resolve_order]
+        resolve_order = [template.format(part) for part in as_options["global"].get("resolve_order", "").split(',')]
         log.info("Resolve order is %s", resolve_order)
 
         for key in as_options.keys():
-            values = as_options[key]
-            for part in resolve_order:
-                if part:
-                    val = values.get(part)
-                    if val:
-                        values.update(val)
+            current_values = as_options[key]
+
+            if not current_values.get("no_resolve", False):
+                new_values = MergedOptions()
+
+                for part in resolve_order:
+                    if not part:
+                        new_values.update(current_values)
+                    else:
+                        val = current_values.get(part)
+                        if val:
+                            new_values.update(val)
+
+                as_options[key] = new_values
 
         return as_options
 

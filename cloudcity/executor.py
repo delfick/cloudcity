@@ -96,7 +96,7 @@ def main(argv=None):
     setup_logging()
 
     # Get all the forced_global options
-    forced_global = {"configs": args.configs}
+    forced_global = {"configs": args.configs, "no_resolve": True}
 
     if args.options:
         for key, val in args.options:
