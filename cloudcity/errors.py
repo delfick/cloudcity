@@ -32,6 +32,9 @@ class BadStack(CloudCityError):
 class BadConfig(CloudCityError):
     desc = "Bad config"
 
+class MissingMandatoryOptions(CloudCityError):
+    desc = "Some options weren't specified"
+
 class StackDepCycle(BadStack):
     desc = "Stack dependency cycle"
 
