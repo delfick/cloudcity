@@ -10,29 +10,28 @@ import os
 
 log = logging.getLogger("configurations")
 
-def option_resolve(option, all_options, config_only=False):
-    """Resolve the values in an option"""
+class MergedOptionStringFormatter(string.Formatter):
+    """Resolve format options into the all_options dictionary"""
+    def __init__(self, all_options, config_only=False):
+        self.all_options = all_options
+        self.config_only = config_only
+        super(MergedOptionStringFormatter, self).__init__()
 
-    class Template(string.Formatter):
-        """Resolve format options into the all_options dictionary"""
-        def get_field(self, value, args, kwargs):
-            """Also take the spec into account"""
-            if '.' not in value:
-                raise BadOptionFormat("Shouldn't format in a whole stack")
+    def get_field(self, value, args, kwargs):
+        """Also take the spec into account"""
+        if '.' not in value:
+            raise BadOptionFormat("Shouldn't format a whole stack into the string")
 
-            val = all_options.get(value)
-            if isinstance(val, dict) or isinstance(val, MergedOptions):
-                raise BadOptionFormat("Shouldn't format in a dictionary")
+        val = self.all_options.get(value)
+        if isinstance(val, dict) or isinstance(val, MergedOptions):
+            raise BadOptionFormat("Shouldn't format in a dictionary")
 
-            parent = ".".join(value.split(".")[:-1])
-            for value in all_options.values_for(parent):
-                if isinstance(val, dict) or isinstance(val, MergedOptions):
-                    if value.get("type", "config") != "config" and config_only:
-                        raise BadOptionFormat("Can only resolve options from 'config' stacks", invalid_stack_type=value.get("type"))
+        root = value.split(".")[0]
+        root_type = self.all_options.get("{0}.type".format(root), "config")
+        if root_type != "config":
+            raise BadOptionFormat("Can only resolve options from 'config' stacks", invalid_stack_type=root_type, option=value)
 
-            return val, ()
-
-    return Template().format(option)
+        return val, ()
 
 class ConfigReader(object):
     """Knows how to read config files"""
@@ -140,8 +139,9 @@ class Configurations(object):
         if 'global' not in as_options:
             as_options["global"] = MergedOptions()
 
+        template = MergedOptionStringFormatter(as_options, config_only=True)
         resolve_order = as_options["global"].get("resolve_order", "").split(',')
-        resolve_order = [option_resolve(part, as_options, config_only=True) for part in resolve_order]
+        resolve_order = [template.format(part) for part in resolve_order]
         log.info("Resolve order is %s", resolve_order)
 
         for key in as_options.keys():
