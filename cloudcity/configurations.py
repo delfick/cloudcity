@@ -35,7 +35,6 @@ class MergedOptionStringFormatter(string.Formatter):
 
 class ConfigReader(object):
     """Knows how to read config files"""
-    VALID_EXTENSIONS = ['json', 'yaml']
 
     def __init__(self):
         self.resolvers = {}
@@ -57,7 +56,7 @@ class ConfigReader(object):
 
     def matched_extension(self, config_file):
         """Return the extension this config_file has if it has a valid one"""
-        for extension in self.VALID_EXTENSIONS:
+        for extension in self.resolvers:
             if config_file.endswith(".{0}".format(extension)):
                 return extension
 
