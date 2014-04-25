@@ -18,6 +18,12 @@ setup(
         ]
       }
 
+    , entry_points =
+      { 'console_scripts' :
+        [ 'cloudcity = cloudcity.executor:main'
+        ]
+      }
+
     # metadata for upload to PyPI
     , url = "http://cloudcity.readthedocs.org"
     , author = "Stephen Moore"

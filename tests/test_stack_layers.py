@@ -1,7 +1,7 @@
 # coding: spec
 
+from cloudcity.stack_layers import StackLayers
 from cloudcity.errors import StackDepCycle
-from cloudcity.stacks import StackLayers
 
 from noseOfYeti.tokeniser.support import noy_sup_setUp, noy_sup_tearDown
 from unittest import TestCase
@@ -151,11 +151,11 @@ describe TestCase, "StackLayer":
             self.stack1.dependencies = ['stack2']
             self.stack2.dependencies = ['stack1']
 
-            with self.assertRaisesRegexp(StackDepCycle, "Found a cyclic dependency chain: \['stack1', 'stack2', 'stack1'\]"):
+            with self.assertRaisesRegexp(StackDepCycle, "\"Stack dependency cycle\"\tchain=\['stack1', 'stack2', 'stack1'\]"):
                 self.instance.add_to_layers("stack1")
 
             self.instance.reset()
-            with self.assertRaisesRegexp(StackDepCycle, "Found a cyclic dependency chain: \['stack2', 'stack1', 'stack2'\]"):
+            with self.assertRaisesRegexp(StackDepCycle, "\"Stack dependency cycle\"\tchain=\['stack2', 'stack1', 'stack2'\]"):
                 self.instance.add_to_layers("stack2")
 
         describe "Dependencies":
