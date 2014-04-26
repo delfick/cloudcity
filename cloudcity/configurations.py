@@ -63,17 +63,27 @@ class ConfigReader(object):
     def as_dict(self, config_file):
         extension = self.matched_extension(config_file)
         if not extension:
-            raise InvalidConfigFile(config_file, "Unrecognised filetype")
+            raise InvalidConfigFile("Unrecognised filetype", config_file=config_file)
 
         return self.resolvers[extension](config_file)
 
     def read_json(self, config_file):
         """Turn json config_file into a dictionary"""
-        return json.load(open(config_file))
+        try:
+            if os.stat(config_file).st_size == 0:
+                return {}
+            return json.load(open(config_file))
+        except ValueError as error:
+            raise InvalidConfigFile("Failed to read json", error_type=error.__class__.__name__, error=error)
 
     def read_yaml(self, config_file):
         """Turn yaml config_file into a dictionary"""
-        return yaml.load(open(config_file))
+        try:
+            if os.stat(config_file).st_size == 0:
+                return {}
+            return yaml.load(open(config_file))
+        except yaml.parser.ParserError as error:
+            raise InvalidConfigFile("Failed to read yaml", error_type=error.__class__.__name__, error=error.problem)
 
 class Configurations(object):
     """Knows how to get from configurations files to dictionary of Stack objects"""
