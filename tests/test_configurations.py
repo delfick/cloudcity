@@ -1,10 +1,10 @@
 # coding: spec
 
-from cloudcity.errors import BadOptionFormat, BadConfigResolver, InvalidConfigFile
-from cloudcity.configurations import MergedOptionStringFormatter, ConfigReader
+from cloudcity.errors import BadOptionFormat, BadConfigResolver, InvalidConfigFile, FailedConfigPickup
+from cloudcity.configurations import MergedOptionStringFormatter, ConfigReader, Configurations
 from option_merge import MergedOptions
 
-from tests.helpers import a_temp_file
+from tests.helpers import a_temp_file, setup_directory, a_temp_dir
 
 from noseOfYeti.tokeniser.support import noy_sup_setUp
 from unittest import TestCase
@@ -14,6 +14,7 @@ import json
 import yaml
 import mock
 import re
+import os
 
 describe TestCase, "MergedOptions string formatter":
     before_each:
@@ -195,4 +196,178 @@ describe TestCase, "ConfigReader":
 
                     with self.assertRaisesRegexp(InvalidConfigFile, re.escape('"Invalid config file. Failed to read yaml"\terror={0}\terror_type=ParserError'.format(error))):
                         self.reader.read_yaml(filename)
+
+describe TestCase,"Configurations":
+    before_each:
+        self.folders = mock.Mock(name="folders")
+        self.config_reader = mock.Mock(name="config_reader")
+        self.config_reader_kls = mock.Mock(name="config_reader_kls")
+        self.config_reader_kls.return_value = self.config_reader
+        self.configurations = Configurations(self.folders, self.config_reader_kls)
+
+    it "inits seen, found, folders and config_reader":
+        configurations = Configurations(self.folders, self.config_reader_kls)
+        self.assertIs(configurations.folders, self.folders)
+        self.assertIs(configurations.config_reader, self.config_reader)
+        self.assertEqual(configurations.seen, {})
+        self.assertEqual(configurations.found, {})
+        configurations.found[1].append(2)
+        self.assertEqual(configurations.found, {1:[2]})
+
+    it "has a method for adding to found":
+        key = mock.Mock(name="key")
+        value1 = mock.Mock(name="value1")
+        value2 = mock.Mock(name="value2")
+
+        self.assertEqual(self.configurations.found, {})
+        self.configurations.add(key, value1)
+        self.assertEqual(self.configurations.found, {key: [value1]})
+
+        self.configurations.add(key, value2)
+        self.assertEqual(self.configurations.found, {key: [value1, value2]})
+
+    describe "Picking up the configs":
+        before_each:
+            self.config_files = {
+                  1: (True, {"a": {"aa": 11}})
+                , 2: (False, None)
+                , 3: (True, {"b": {"bb": 22}})
+                , 4: (True, {"c": {"cc": 33}, "d": {"dd": 44}})
+                }
+
+            sorted_files = []
+            for name, (is_config, dct) in self.config_files.items():
+                alias = "cf{0}".format(name)
+                mck = mock.Mock(name=alias)
+                mck.dct = dct
+                mck.is_config = is_config
+                sorted_files.append(mck)
+                setattr(self, alias, mck)
+
+            self.sorted_files = mock.Mock(name="sorted_files")
+            self.sorted_files.return_value = sorted_files
+
+            def is_config(config_file):
+                return config_file.is_config
+            self.config_reader.is_config.side_effect = is_config
+
+            def as_dct(config_file):
+                return config_file.dct
+            self.config_reader.as_dict.side_effect = as_dct
+
+        it "uses config_reader to add dictionaries from config files":
+            add = mock.Mock(name="add")
+
+            with mock.patch.multiple(self.configurations, sorted_files=self.sorted_files, add=add):
+                self.configurations.pick_up_configs()
+
+            self.config_reader.is_config.assert_has_calls([mock.call(self.cf1), mock.call(self.cf2), mock.call(self.cf3), mock.call(self.cf4)], any_order=False)
+            self.config_reader.as_dict.assert_has_calls([  mock.call(self.cf1),                      mock.call(self.cf3), mock.call(self.cf4)], any_order=False)
+            add.assert_has_calls([mock.call("a", {"aa": 11}), mock.call("b", {"bb": 22}), mock.call("c", {"cc": 33}), mock.call("d", {"dd": 44})])
+
+        it "complains about all the configs that failed":
+            add = mock.Mock(name="add")
+            error1 = InvalidConfigFile("error1")
+            error2 = InvalidConfigFile("error2")
+
+            def as_dct(config_file):
+                if config_file is self.cf1:
+                    raise error1
+                elif config_file is self.cf4:
+                    raise error2
+                else:
+                    return config_file.dct
+            self.config_reader.as_dict.side_effect = as_dct
+
+            with self.assertRaisesRegexp(FailedConfigPickup, re.escape('"Failed to pickup configs"\terrors={0}'.format(dict([(self.cf1, error1), (self.cf4, error2)])))):
+                with mock.patch.multiple(self.configurations, sorted_files=self.sorted_files, add=add):
+                    self.configurations.pick_up_configs()
+
+            self.config_reader.is_config.assert_has_calls([mock.call(self.cf1), mock.call(self.cf2), mock.call(self.cf3), mock.call(self.cf4)], any_order=False)
+            self.config_reader.as_dict.assert_has_calls([  mock.call(self.cf1),                      mock.call(self.cf3), mock.call(self.cf4)], any_order=False)
+            add.assert_has_calls([mock.call("b", {"bb": 22})])
+
+    describe "Getting all the files in sorted order":
+        before_each:
+            self.hierarchy = {
+                  "a":
+                  { "f":
+                    { "a": [('1', None), ('2', None)]
+                    , "z": [('20', None), ('90', None)]
+                    }
+                  , "g": [('70', None)]
+                  }
+                , "c":
+                  { "a": None
+                  , "b": [('b', None), {'a': {'c': [('d', None)]}}]
+                  }
+                , "d":
+                  { "a": {'a': {'a': {'a': [('1', None)]}}}
+                  }
+                }
+
+            self.expected_order = [
+                  "a.f.a.1"
+                , "a.f.a.2"
+                , "a.f.z.20"
+                , "a.f.z.90"
+                , "a.g.70"
+                , "c.b.a.c.d"
+                , "c.b.b"
+                , "d.a.a.a.a.1"
+                ]
+
+        def resolve(self, path, record):
+            """Resolve the file path into the record"""
+            if isinstance(path, basestring):
+                path = path.split('.')
+            if len(path) is 1:
+                return os.path.abspath(os.path.realpath(record[path[0]]))
+            else:
+                first, rest = path[0], path[1:]
+                return self.resolve(rest, record[first])
+
+        it "gets all files in sorted order by file and directory":
+            with setup_directory(self.hierarchy) as (root, record):
+                configurations = Configurations([root])
+                found = list(configurations.sorted_files())
+                expected = [self.resolve(exp, record) for exp in self.expected_order]
+                self.assertEqual(found, expected)
+
+        it "doesn't repeat files":
+            with setup_directory(self.hierarchy) as (root, record):
+                os.symlink(record['a']['g']['/folder/'], os.path.join(record['a']['f']['z']['/folder/'], 'h'))
+                configurations = Configurations([root, record["a"]["f"]["/folder/"]])
+                found = list(configurations.sorted_files())
+                expected = [self.resolve(exp, record) for exp in self.expected_order]
+                self.assertEqual(found, expected)
+
+        it "deals with symlinks":
+            other_hierarchy = {
+                  "t":
+                  { "s": [('0', None), ('7', None)]
+                  , "j": [('50', None), ('60', None)]
+                  }
+                }
+
+            other_expected = [
+                  'b.t.j.50'
+                , 'b.t.j.60'
+                , 'b.t.s.0'
+                , 'b.t.s.7'
+                ]
+
+            with setup_directory(other_hierarchy) as (other_root, other_record):
+                with setup_directory(self.hierarchy) as (root, record):
+                    os.symlink(other_root, os.path.join(record['/folder/'], 'b'))
+                    record['b'] = other_record
+
+                    configurations = Configurations([root])
+                    found = list(configurations.sorted_files())
+                    for index, item in enumerate(self.expected_order):
+                        if not item.startswith('a'):
+                            break
+                    expected_order = self.expected_order[:index] + other_expected + self.expected_order[index:]
+                    expected = [self.resolve(exp, record) for exp in expected_order]
+                    self.assertEqual(found, expected)
 

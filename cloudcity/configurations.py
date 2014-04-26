@@ -88,28 +88,29 @@ class ConfigReader(object):
 class Configurations(object):
     """Knows how to get from configurations files to dictionary of Stack objects"""
     def __init__(self, folders, config_reader_kls=ConfigReader):
-        self.reset()
+        self.seen = {}
+        self.found = defaultdict(list)
         self.folders = folders
         self.config_reader = config_reader_kls()
 
-    def reset(self):
-        """Reset the paths we've seen"""
-        self.seen = {}
-        self.found = defaultdict(list)
+    def add(self, name, values):
+        """Add a dictionary for some stack"""
+        self.found[name].append(values)
 
     def pick_up_configs(self):
         """Find all the configurations in our specified folders and store them in memory"""
         errors = {}
         for config_file in self.sorted_files():
-            dct = None
-            try:
-                dct = self.config_reader.as_dict(config_file)
-            except InvalidConfigFile as err:
-                errors[config_file] = err
+            if self.config_reader.is_config(config_file):
+                dct = None
+                try:
+                    dct = self.config_reader.as_dict(config_file)
+                except InvalidConfigFile as err:
+                    errors[config_file] = err
 
-            if dct:
-                for key, val in dct.items():
-                    self.found[key].append(val)
+                if dct:
+                    for key, val in dct.items():
+                        self.add(key, val)
 
         if errors:
             raise FailedConfigPickup(errors=errors)
@@ -129,15 +130,10 @@ class Configurations(object):
 
                 self.seen[path] = True
                 if os.path.isfile(path):
-                    if self.config_reader.is_config(path):
-                        yield path
+                    yield path
                 else:
                     for fle in self.sorted_files(path):
                         yield fle
-
-    def add(self, name, values):
-        """Add a dictionary for some stack"""
-        self.found[name].append(values)
 
     def resolve(self):
         """Return a dictionary of resolved configurations"""
