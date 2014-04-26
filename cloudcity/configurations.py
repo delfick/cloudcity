@@ -24,7 +24,7 @@ class MergedOptionStringFormatter(string.Formatter):
 
         val = self.all_options.get(value)
         if isinstance(val, dict) or isinstance(val, MergedOptions):
-            raise BadOptionFormat("Shouldn't format in a dictionary")
+            raise BadOptionFormat("Shouldn't format in a dictionary", key=value)
 
         root = value.split(".")[0]
         root_type = self.all_options.get("{0}.type".format(root), "config")
