@@ -11,7 +11,7 @@ import re
 log = logging.getLogger("executor")
 
 regexes = {
-      "valid_python_key": re.compile(r'^[a-zA-Z0-9\._-]+$')
+      "valid_python_key": re.compile(r'^[a-zA-Z_][a-zA-Z0-9\._]+$')
     }
 
 def readable_folder(value):
