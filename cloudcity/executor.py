@@ -1,11 +1,12 @@
+from cloudcity.errors import MissingMandatoryOptions, CloudCityError, BadOptionFormat
 from cloudcity.configurations import ConfigurationResolver, ConfigurationFinder
-from cloudcity.errors import MissingMandatoryOptions, CloudCityError
 from cloudcity.resolution.resolver import StackResolver
 from cloudcity.layers import Layers
 
 
 from rainbow_logging_handler import RainbowLoggingHandler
 from option_merge import MergedOptions
+from collections import defaultdict
 
 import argparse
 import logging
@@ -106,9 +107,33 @@ def get_parser():
 
     return parser
 
+def investigate_required_keys(stacks):
+    """Make sure all the formatted keys format to keys that will be available"""
+    not_found = []
+    dependencies = defaultdict(set)
+
+    for name, stack in stacks.items():
+        for needing, requiring in stack.find_required_keys():
+            for required in requiring:
+                stack_name, required_key = required.split(".", 1)
+                if not stacks[stack_name].check_option_availablity(required_key):
+                    not_found.append([name, needing, required])
+                else:
+                    dependencies[name].add(stack_name)
+
+    if not_found:
+        for name, needing, required in not_found:
+            log.error("The '%s' key in the '%s' stack requires the %s key", needing, name, required)
+        raise BadOptionFormat("Missing required keys", missing=len(not_found))
+
+    for name, required in dependencies.items():
+        stacks[name].add_dependencies(list(required))
+
 def deploy(stack, options, stack_resolver):
     """Deploy a particular stack and all it's dependencies"""
-    stacks = {name:stack_resolver.resolve(name, opts) for name, opts in options.items()}
+    stacks = {name:stack_resolver.resolve(name, options[name]) for name in options}
+    investigate_required_keys(stacks)
+
     layers = Layers(stacks)
     layers.add_to_layers(stack)
 

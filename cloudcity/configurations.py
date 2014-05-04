@@ -15,6 +15,7 @@ class MergedOptionStringFormatter(string.Formatter):
     def __init__(self, all_options, config_only=False):
         self.all_options = all_options
         self.config_only = config_only
+        self.found_requirements = []
         super(MergedOptionStringFormatter, self).__init__()
 
     def get_field(self, value, args, kwargs):
@@ -25,6 +26,9 @@ class MergedOptionStringFormatter(string.Formatter):
         val = self.all_options.get(value)
         if isinstance(val, dict) or isinstance(val, MergedOptions):
             raise BadOptionFormat("Shouldn't format in a dictionary", key=value)
+
+        # Record what was found
+        self.found_requirements.append(value)
 
         root = value.split(".")[0]
         root_type = self.all_options.get("{0}.type".format(root), "config")
