@@ -50,3 +50,12 @@ class BadConfigResolver(BadConfig):
 class BadOptionFormat(BadConfig):
     desc = "Bad option format string"
 
+class UnknownStackType(BadConfig):
+    desc = "Resolving an unknown stack type"
+
+class BadStackKls(BadConfig):
+    desc = "Something wrong with a Stack kls"
+
+class BadImport(BadConfig):
+    desc = "Something wrong with an import string"
+

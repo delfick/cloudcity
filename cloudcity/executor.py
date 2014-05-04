@@ -1,5 +1,7 @@
 from cloudcity.configurations import ConfigurationResolver, ConfigurationFinder
 from cloudcity.errors import MissingMandatoryOptions, CloudCityError
+from cloudcity.resolution.resolver import StackResolver
+from cloudcity.layers import Layers
 
 from option_merge import MergedOptions
 
@@ -70,6 +72,11 @@ def get_parser():
         , action = 'append'
         )
 
+    parser.add_argument("--execute"
+        , help = "The stack to execute"
+        , required = True
+        )
+
     parser.add_argument("--dry-run"
         , help = "Force global.dry_run to True"
         , action = "store_true"
@@ -91,6 +98,16 @@ def get_parser():
         )
 
     return parser
+
+def deploy(stack, options, stack_resolver):
+    """Deploy a particular stack and all it's dependencies"""
+    stacks = {name:stack_resolver.resolve(name, opts) for name, opts in options.items()}
+    layers = Layers(stacks)
+    layers.add_to_layers(stack)
+
+    for layer in layers.layered:
+        for stack_name, stack_obj in layer:
+            log.info("Deploying %s", stack_name)
 
 def main(argv=None):
     parser = get_parser()
@@ -126,10 +143,12 @@ def main(argv=None):
     if not_present:
         raise MissingMandatoryOptions(missing=not_present)
 
-    for key, val in resolved.items():
-        print '-' * 50
-        print "{0}:".format(key)
-        print "\t{0}".format(val)
+    if args.execute not in resolved:
+        raise CloudCityError("Missing stack", available=resolved.keys(), wanted=args.execute)
+
+    resolver = StackResolver()
+    resolver.register_defaults()
+    deploy(args.execute, resolved, resolver)
 
 if __name__ == '__main__':
     try:
