@@ -1,7 +1,7 @@
 # coding: spec
 
+from cloudcity.configurations import MergedOptionStringFormatter, ConfigReader, ConfigurationFinder, ConfigurationResolver
 from cloudcity.errors import BadOptionFormat, BadConfigResolver, InvalidConfigFile, FailedConfigPickup
-from cloudcity.configurations import MergedOptionStringFormatter, ConfigReader, ConfigurationFinder
 from option_merge import MergedOptions
 
 from tests.helpers import a_temp_file, setup_directory, a_temp_dir
@@ -411,4 +411,133 @@ describe TestCase,"ConfigurationFinder":
                     expected_order = self.expected_order[:index] + other_expected + self.expected_order[index:]
                     expected = [self.resolve(exp, record) for exp in expected_order]
                     self.assertEqual(found, expected)
+
+describe TestCase, "Configuration Resolver":
+    before_each:
+        self.finder = mock.Mock(name="finder")
+
+    it "takes in a finder and extra options":
+        resolver = ConfigurationResolver(self.finder)
+        self.assertIs(resolver.finder, self.finder)
+        self.assertIs(resolver.extra_options, None)
+
+        extra_options = mock.Mock(name="extra_options")
+        resolver = ConfigurationResolver(self.finder, extra_options)
+        self.assertIs(resolver.finder, self.finder)
+        self.assertIs(resolver.extra_options, extra_options)
+
+    describe "Getting resolved":
+        before_each:
+            self.resolver = ConfigurationResolver(self.finder)
+
+        it "operates on an options from the finder":
+            options = mock.MagicMock(name="options")
+            new_options = mock.Mock(name="new_options")
+            resolve_order = mock.Mock(name="resolve_order")
+            self.finder.make_options.return_value = options
+
+            resolve = mock.Mock(name="resolve")
+            determine_resolve_order = mock.Mock(name="determine_resolve_order")
+
+            called = []
+            determine_resolve_order.side_effect = lambda *args: called.append(1) or resolve_order
+            resolve.side_effect = lambda *args: called.append(2) or new_options
+
+            with mock.patch.multiple(self.resolver, resolve=resolve, determine_resolve_order=determine_resolve_order):
+                self.assertIs(self.resolver.resolved(resolve_order), new_options)
+                resolve.assert_called_once_with(options, resolve_order)
+                determine_resolve_order.assert_called_once_with(options, resolve_order)
+
+            self.assertEqual(called, [1, 2])
+
+    describe "Determining the resolve order":
+        before_each:
+            self.resolver = ConfigurationResolver(self.finder)
+
+        it "defaults the resolve order to what is in the options":
+            options = MergedOptions.using({"global": {"resolve_order": "one,two,three"}})
+            resolve_order = self.resolver.determine_resolve_order(options, None)
+            self.assertEqual(resolve_order, ["one", "two", "three"])
+
+        it "sets the resolve_order to an empty array if it's None":
+            options = MergedOptions()
+            self.assertEqual(self.resolver.determine_resolve_order(options, None), [])
+
+        it "uses the provided resolve_order if one is provided":
+            options = MergedOptions()
+            resolve_order = self.resolver.determine_resolve_order(options, "four,five,six")
+            self.assertEqual(resolve_order, ["four", "five", "six"])
+
+        it "templates the resolve_order from the options":
+            options = MergedOptions.using({"one": {"five": 23}, "two":{"tree": "stuff"}})
+            resolve_order = self.resolver.determine_resolve_order(options, "four,five,{one.five}{two.tree}")
+            self.assertEqual(resolve_order, ["four", "five", "23stuff"])
+
+    describe "resolving":
+        before_each:
+            self.resolver = ConfigurationResolver(self.finder)
+
+        it "uses the resolve order to layer each stack using it's own values":
+            options = MergedOptions.using(
+                  {"dns": {"things": True, "common": {"other": 1, "meh": 2}, "dev": {"meh": 3}, "prod": {"meh": 4}}}
+                , {"security_groups": {"blah": False, "common": {"blah": True}}}
+                , {"app": {"dev": {"cloud": "maybe"}}}
+                , {"things": {}}
+                )
+
+            new_options = self.resolver.resolve(options, ["", "common", "dev"])
+            expected = [
+                  ("global.resolve_order", ["", "common", "dev"])
+                , ("dns.things", True), ("dns.common.other", 1), ("dns.common.meh", 2), ("dns.dev.meh", 3), ("dns.prod.meh", 4), ("dns.other", 1), ("dns.meh", 3)
+                , ("security_groups.blah", True), ("security_groups.common.blah", True)
+                , ("app.dev.cloud", "maybe"), ("app.cloud", "maybe")
+                ]
+            self.assertEqual(sorted(new_options.as_flat()), sorted(expected))
+
+        it "can resolve without base object":
+            options = MergedOptions.using(
+                  {"dns": {"things": True, "common": {"other": 1, "meh": 2}, "dev": {"meh": 3}, "prod": {"meh": 4}}}
+                , {"security_groups": {"blah": False, "common": {"blah": True}}}
+                , {"app": {"dev": {"cloud": "maybe"}}}
+                , {"things": {}}
+                )
+
+            new_options = self.resolver.resolve(options, ["common", "dev"])
+            expected = [
+                  ("global.resolve_order", ["common", "dev"])
+                , ("dns.other", 1), ("dns.meh", 3)
+                , ("security_groups.blah", True)
+                , ("app.cloud", "maybe")
+                ]
+
+            self.assertEqual(sorted(new_options.as_flat()), sorted(expected))
+
+        it "forces global.resolve_order on the resulting object":
+            options = MergedOptions.using(
+                  {"global": {"resolve_order": ["meh"]}}
+                , {"app": {"dev": {"cloud": "maybe"}}}
+                )
+
+            new_options = self.resolver.resolve(options, ["common", "dev"])
+            expected = [
+                  ("global.resolve_order", ["common", "dev"])
+                , ("app.cloud", "maybe")
+                ]
+
+            self.assertEqual(sorted(new_options.as_flat()), sorted(expected))
+
+        it "does not resolve if the stack has no_resolve set to True":
+            options = MergedOptions.using(
+                  {"security_groups": {"blah": False, "common": {"blah": True}}}
+                , {"app": {"dev": {"cloud": "maybe"}, "no_resolve": True}}
+                )
+
+            new_options = self.resolver.resolve(options, ["common", "dev"])
+            expected = [
+                  ("global.resolve_order", ["common", "dev"])
+                , ("security_groups.blah", True)
+                , ("app.dev.cloud", "maybe"), ("app.no_resolve", True)
+                ]
+
+            self.assertEqual(sorted(new_options.as_flat()), sorted(expected))
 

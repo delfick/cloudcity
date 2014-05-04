@@ -169,22 +169,22 @@ class ConfigurationResolver(object):
         options.update(self.extra_options)
 
         resolve_order = self.determine_resolve_order(options, resolve_order)
-        options["global"]["resolve_order"] = resolve_order
+
         log.info("Resolve order is %s", resolve_order)
+        resolved = self.resolve(options, resolve_order)
+        return resolved
 
-        self.resolve(options)
-        return options
-
-    def resolve(self, options):
+    def resolve(self, options, resolve_order):
         """Go through and re-add parts of the options as according to global.resolve_order"""
-        resolve_order = options["global"].get("resolve_order")
+        new_options = MergedOptions.using({"global": options.get("global", {})})
 
         for key in options.keys():
+            new_values = MergedOptions()
             current_values = options[key]
 
-            if not current_values.get("no_resolve", False):
-                new_values = MergedOptions()
-
+            if current_values.get("no_resolve", False):
+                new_values.update(current_values)
+            else:
                 for part in resolve_order:
                     if not part:
                         new_values.update(current_values)
@@ -193,16 +193,17 @@ class ConfigurationResolver(object):
                         if val:
                             new_values.update(val)
 
-                options[key] = new_values
+            new_options[key] = new_values
 
-        return options
+        new_options["global"]["resolve_order"] = resolve_order
+        return new_options
 
     def determine_resolve_order(self, options, resolve_order):
         """Figure out our resolve order and set it on the options"""
         template = MergedOptionStringFormatter(options, config_only=True)
 
         if resolve_order is None:
-            resolve_order = options["global"].get("resolve_order", "")
+            resolve_order = options.get("global", {}).get("resolve_order", None)
 
         if resolve_order is None:
             resolve_order = []
