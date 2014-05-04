@@ -3,6 +3,8 @@ from cloudcity.errors import MissingMandatoryOptions, CloudCityError
 from cloudcity.resolution.resolver import StackResolver
 from cloudcity.layers import Layers
 
+
+from rainbow_logging_handler import RainbowLoggingHandler
 from option_merge import MergedOptions
 
 import argparse
@@ -52,7 +54,12 @@ def key_value_pair(value):
 
 def setup_logging():
     log = logging.getLogger("")
-    log.addHandler(logging.StreamHandler(sys.stdout))
+    handler = RainbowLoggingHandler(sys.stderr)
+    handler._column_color['%(asctime)s'] = ('cyan', None, False)
+    handler._column_color['%(levelname)-7s'] = ('green', None, False)
+    handler._column_color['%(message)s'][logging.INFO] = ('blue', None, False)
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-7s %(name)-15s %(message)s"))
+    log.addHandler(handler)
     log.setLevel(logging.INFO)
 
 def get_parser():
@@ -114,6 +121,16 @@ def main(argv=None):
     args = parser.parse_args(argv)
     setup_logging()
 
+    try:
+        execute(args)
+    except CloudCityError as error:
+        print ""
+        print "!" * 80
+        print "Something went wrong! -- {0}".format(error.__class__.__name__)
+        print "\t{0}".format(error)
+        sys.exit(1)
+
+def execute(args):
     # Get all the forced_global options
     forced = MergedOptions.using({"global": {"configs": args.configs, "no_resolve": True}})
 
@@ -155,10 +172,3 @@ if __name__ == '__main__':
         main()
     except KeyboardInterrupt:
         pass
-    except CloudCityError as error:
-        print ""
-        print "!" * 80
-        print "Something went wrong! -- {0}".format(error.__class__.__name__)
-        print "\t{0}".format(error)
-        sys.exit(1)
-

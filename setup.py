@@ -9,6 +9,7 @@ setup(
     , install_requires =
       [ 'option_merge>=0.4'
       , 'pyYaml'
+      , 'rainbow_logging_handler'
       ]
 
     , extras_require =
