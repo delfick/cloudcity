@@ -85,17 +85,28 @@ class ConfigReader(object):
         except yaml.parser.ParserError as error:
             raise InvalidConfigFile("Failed to read yaml", error_type=error.__class__.__name__, error=error.problem)
 
-class Configurations(object):
-    """Knows how to get from configurations files to dictionary of Stack objects"""
+class ConfigurationFinder(object):
+    """Knows how to find files on disk and convert them into a MergedOptions object"""
     def __init__(self, folders, config_reader_kls=ConfigReader):
-        self.seen = {}
-        self.found = defaultdict(list)
         self.folders = folders
         self.config_reader = config_reader_kls()
+        self.reset()
+
+    @property
+    def found(self):
+        """Call pick_up_configs if we haven't found anything yet, otherwise just return"""
+        if not self._found:
+            self.pick_up_configs()
+        return self._found
+
+    def reset(self):
+        """Reset seen and _found"""
+        self.seen = {}
+        self._found = defaultdict(list)
 
     def add(self, name, values):
         """Add a dictionary for some stack"""
-        self.found[name].append(values)
+        self._found[name].append(values)
 
     def pick_up_configs(self):
         """Find all the configurations in our specified folders and store them in memory"""
@@ -135,21 +146,41 @@ class Configurations(object):
                     for fle in self.sorted_files(path):
                         yield fle
 
-    def resolve(self):
-        """Return a dictionary of resolved configurations"""
-        as_options = MergedOptions()
+    def make_options(self):
+        """Get all the found files into a MergedOptions object and default global"""
+        options = MergedOptions()
         for key, values_list in self.found.items():
-            as_options[key] = MergedOptions.using(*values_list)
+            options[key] = MergedOptions.using(*values_list)
 
-        if 'global' not in as_options:
-            as_options["global"] = MergedOptions()
+        if 'global' not in options:
+            options["global"] = MergedOptions()
 
-        template = MergedOptionStringFormatter(as_options, config_only=True)
-        resolve_order = [template.format(part) for part in as_options["global"].get("resolve_order", "").split(',')]
+        return options
+
+class ConfigurationResolver(object):
+    """Knows how to get a resolved MergedOptions object from a ConfigurationFinder"""
+    def __init__(self, configuration_finder, extra_options=None):
+        self.finder = configuration_finder
+        self.extra_options = extra_options
+
+    def resolved(self, resolve_order=None):
+        """Return a dictionary of resolved configurations"""
+        options = self.finder.make_options()
+        options.update(self.extra_options)
+
+        resolve_order = self.determine_resolve_order(options, resolve_order)
+        options["global"]["resolve_order"] = resolve_order
         log.info("Resolve order is %s", resolve_order)
 
-        for key in as_options.keys():
-            current_values = as_options[key]
+        self.resolve(options)
+        return options
+
+    def resolve(self, options):
+        """Go through and re-add parts of the options as according to global.resolve_order"""
+        resolve_order = options["global"].get("resolve_order")
+
+        for key in options.keys():
+            current_values = options[key]
 
             if not current_values.get("no_resolve", False):
                 new_values = MergedOptions()
@@ -162,7 +193,21 @@ class Configurations(object):
                         if val:
                             new_values.update(val)
 
-                as_options[key] = new_values
+                options[key] = new_values
 
-        return as_options
+        return options
+
+    def determine_resolve_order(self, options, resolve_order):
+        """Figure out our resolve order and set it on the options"""
+        template = MergedOptionStringFormatter(options, config_only=True)
+
+        if resolve_order is None:
+            resolve_order = options["global"].get("resolve_order", "")
+
+        if resolve_order is None:
+            resolve_order = []
+        else:
+            resolve_order = [template.format(part) for part in resolve_order.split(",")]
+
+        return resolve_order
 

@@ -1,5 +1,7 @@
+from cloudcity.configurations import ConfigurationResolver, ConfigurationFinder
 from cloudcity.errors import MissingMandatoryOptions, CloudCityError
-from cloudcity.configurations import Configurations
+
+from option_merge import MergedOptions
 
 import argparse
 import logging
@@ -96,31 +98,28 @@ def main(argv=None):
     setup_logging()
 
     # Get all the forced_global options
-    forced_global = {"configs": args.configs, "no_resolve": True}
+    forced = MergedOptions.using({"global": {"configs": args.configs, "no_resolve": True}})
 
     if args.options:
         for key, val in args.options:
-            forced_global[key] = val
+            forced[key] = val
 
     for key in 'environment', 'resolve_order', 'dry_run', 'mandatory_options':
         if getattr(args, key, None):
-            forced_global[key] = getattr(args, key)
+            forced["global"][key] = getattr(args, key)
 
     # Find all our configuration
     log.info("Looking in %s for configuration", args.configs)
-    configurations = Configurations(args.configs)
-    configurations.pick_up_configs()
-
-    if forced_global:
-        log.info("Forcing some global options: %s", forced_global)
-        configurations.add("global", forced_global)
 
     # Get a dictionary of stacks from our configuration
-    resolved = configurations.resolve()
+    if forced:
+        log.info("Setting some options: %s", ' | '.join("[{}:{}]".format(key, val) for key, val in forced.as_flat()))
+    finder = ConfigurationFinder(args.configs)
+    resolved = ConfigurationResolver(finder, forced).resolved()
 
     # Make sure we have all the mandatory options
     not_present = []
-    for option in resolved.get("global.mandatory_options", []):
+    for option in resolved["global"].get("mandatory_options", []):
         if not resolved.get(option):
             not_present.append(option)
 
