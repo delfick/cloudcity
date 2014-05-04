@@ -7,7 +7,7 @@ setup(
     , include_package_data = True
 
     , install_requires =
-      [ 'option_merge>=0.3'
+      [ 'option_merge>=0.4'
       , 'pyYaml'
       ]
 
