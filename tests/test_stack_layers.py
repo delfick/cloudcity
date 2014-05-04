@@ -34,71 +34,22 @@ describe TestCase, "StackLayer":
         layers = StackLayers(stacks)
         self.assertIs(layers.stacks, stacks)
 
-    it "has a classmethod for returning an instance with layers created":
-        stacks = mock.Mock(name="stacks")
-        instance = mock.Mock(name="instance")
-        layerKls = mock.Mock(name="layerKls")
-        layerKls.return_value = instance
-
-        inst = StackLayers.using.__func__(layerKls, stacks)
-        layerKls.assert_callled_once_with(stacks)
-        inst.create_layers.assert_callled_once()
-
-    it "has __iter__ returning layers":
-        item1 = mock.Mock(name="item1")
-        item2 = mock.Mock(name="item2")
-        ret = iter([item1, item2])
-        stacks = mock.Mock(name="stacks")
-        instance = StackLayers(stacks)
-        layers = mock.Mock(name="layers")
-        layers.return_value = ret
-
-        with mock.patch.object(instance, "layers", layers):
-            self.assertEqual(list(instance), [item1, item2])
-
-    describe "Getting layers":
-        it "creates layers if they aren't already created":
-            layered = mock.MagicMock(name="layered")
-            layered.__iter__.return_value = iter([])
-
-            self.instance.layered = None
-            create_layers = mock.Mock(name="create_layers")
-            create_layers.side_effect = lambda: setattr(self.instance, "layered", layered)
-            with mock.patch.object(self.instance, "create_layers", create_layers):
-                list(self.instance.layers())
-            create_layers.assert_callled_once()
-            self.assertIs(self.instance.layered, layered)
-
-        it "yield stack name and stack object for each stack in each layer":
-            self.instance.layered = [['stack2'], ['stack1', 'stack3']]
-            layers = list(self.instance.layers())
-            self.assertEqual(layers, [[('stack2', self.stack2)], [('stack1', self.stack1), ('stack3', self.stack3)]])
-
-    describe "Creating the layers":
-        it "resets the instance and adds all the stacks we know about":
-            called = []
-            reset = mock.Mock(name="reset")
-            reset.side_effect = lambda: called.append(1)
-            add_to_layers = mock.Mock(name="add_to_layers")
-            add_to_layers.side_effect = lambda *args: called.append(2)
-
-            with mock.patch.object(self.instance, "add_to_layers", add_to_layers):
-                with mock.patch.object(self.instance, "reset", reset):
-                    self.instance.create_layers()
-            self.assertCallsSame(add_to_layers, [mock.call("stack1"), mock.call("stack2"), mock.call("stack3")])
-            reset.assert_called_once()
-            self.assertEqual(called, [1, 2, 2, 2])
-
     describe "Resetting the instance":
         it "resets layered to an empty list":
-            self.instance.layered = mock.Mock(name="layered")
+            self.instance._layered = mock.Mock(name="layered")
             self.instance.reset()
-            self.assertEqual(self.instance.layered, [])
+            self.assertEqual(self.instance._layered, [])
 
         it "resets accounted to an empty dict":
             self.instance.accounted = mock.Mock(name="accounted")
             self.instance.reset()
             self.assertEqual(self.instance.accounted, {})
+
+    describe "Getting layered":
+        it "has a property for converting _layered into a list of list of tuples":
+            self.instance._layered = [["one"], ["two", "three"], ["four"]]
+            self.instance.stacks = {"one": 1, "two": 2, "three": 3, "four": 4}
+            self.assertEqual(self.instance.layered, [[("one", 1)], [("two", 2), ("three", 3)], [("four", 4)]])
 
     describe "Adding layers":
         before_each:
@@ -111,7 +62,11 @@ describe TestCase, "StackLayer":
                 self.stacks[name] = obj
             self.instance = StackLayers(self.stacks)
 
-        def assertLayeredSame(self, created, expected):
+        def assertLayeredSame(self, layers, expected):
+            if not layers.layered:
+                layers.add_all_to_layers()
+            created = layers.layered
+
             print "Printing expected and created as each layer on a new line."
             print "    the line starting with || is the expected"
             print "    the line starting with >> is the created"
@@ -129,22 +84,28 @@ describe TestCase, "StackLayer":
                 nxt = expected[index]
                 self.assertEqual(sorted(layer) if layer else None, sorted(nxt) if nxt else None)
 
+        it "has a method for adding all the stacks":
+            add_to_layers = mock.Mock(name="add_to_layers")
+            with mock.patch.object(self.instance, "add_to_layers", add_to_layers):
+                self.instance.add_all_to_layers()
+            self.assertCallsSame(add_to_layers, sorted([mock.call(stack) for stack in self.stacks]))
+
         it "does nothing if the stack is already in accounted":
-            self.assertEqual(self.instance.layered, [])
+            self.assertEqual(self.instance._layered, [])
             self.instance.accounted['stack1'] = True
 
             self.stack1.dependencies = []
             self.instance.add_to_layers("stack1")
-            self.assertEqual(self.instance.layered, [])
+            self.assertEqual(self.instance._layered, [])
             self.assertEqual(self.instance.accounted, {'stack1': True})
 
         it "adds stack to accounted if not already there":
-            self.assertEqual(self.instance.layered, [])
+            self.assertEqual(self.instance._layered, [])
             self.assertEqual(self.instance.accounted, {})
 
             self.stack1.dependencies = []
             self.instance.add_to_layers("stack1")
-            self.assertEqual(self.instance.layered, [["stack1"]])
+            self.assertEqual(self.instance._layered, [["stack1"]])
             self.assertEqual(self.instance.accounted, {'stack1': True})
 
         it "complains about cyclic dependencies":
@@ -171,14 +132,14 @@ describe TestCase, "StackLayer":
 
             describe "Simple dependencies":
                 it "adds all stacks to the first layer if they don't have dependencies":
-                    self.assertLayeredSame(list(self.instance), [self.stacks.items()])
+                    self.assertLayeredSame(self.instance, [self.stacks.items()])
 
                 it "adds stack after it's dependency if one is specified":
                     self.stack3.dependencies = ["stack1"]
                     cpy = dict(self.stacks.items())
                     del cpy["stack3"]
                     expected = [cpy.items(), [("stack3", self.stack3)]]
-                    self.assertLayeredSame(list(self.instance), expected)
+                    self.assertLayeredSame(self.instance, expected)
 
                 it "works with stacks sharing the same dependency":
                     self.stack3.dependencies = ["stack1"]
@@ -190,7 +151,7 @@ describe TestCase, "StackLayer":
                     del cpy["stack4"]
                     del cpy["stack5"]
                     expected = [cpy.items(), [("stack3", self.stack3), ("stack4", self.stack4), ("stack5", self.stack5)]]
-                    self.assertLayeredSame(list(self.instance), expected)
+                    self.assertLayeredSame(self.instance, expected)
 
             describe "Complex dependencies":
                 it "works with more than one level of dependency":
@@ -229,9 +190,9 @@ describe TestCase, "StackLayer":
                         , [("stack9", self.stack9)]
                         ]
 
-                    result = list(self.instance)
+                    self.instance.add_all_to_layers()
                     self.assertCallsSame(self.fake_add_to_layers, expected_calls)
-                    self.assertLayeredSame(result, expected)
+                    self.assertLayeredSame(self.instance, expected)
 
                 it "handles more complex dependencies":
                     self.stack1.dependencies = ['stack2']
@@ -279,7 +240,7 @@ describe TestCase, "StackLayer":
                         , [("stack7", self.stack7)]
                         ]
 
-                    result = list(self.instance)
+                    self.instance.add_all_to_layers()
                     self.assertCallsSame(self.fake_add_to_layers, expected_calls)
-                    self.assertLayeredSame(result, expected)
+                    self.assertLayeredSame(self.instance, expected)
 

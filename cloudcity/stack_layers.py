@@ -6,20 +6,12 @@ class StackLayers(object):
 
     Usage::
 
-        for layer in StackLayers.using(stack1, stack2, stack3, stack4):
+        layers = StackLayers({"stack1": stack1, "stack2": "stack2, "stack3": stack3, "stack4": stack4})
+        layers.add_to_layers("stack3")
+        for layer in layers.layered:
             # might get something like
-            # [("stack1", stack1)]
             # [("stack3", stack4), ("stack2", stack2)]
             # [("stack3", stack3)]
-
-    Equivalent to::
-
-        layers = StackLayers([stack1, stack2, stack3, stack4])
-        layers.create_layers()
-        for layer in layers:
-            pass
-
-    Calling the __iter__ on layers is equivalent to calling layers() on it.
 
     When we create the layers, it will do a depth first addition of all dependencies
     and only add a stack to a layer that occurs after all it's dependencies.
@@ -28,40 +20,33 @@ class StackLayers(object):
     """
     def __init__(self, stacks):
         self.stacks = stacks
-        self.layered = []
         self.accounted = {}
-
-    @classmethod
-    def using(cls, *stacks):
-        instance = cls(stacks)
-        instance.create_layers()
-        return instance
-
-    def __iter__(self):
-        return self.layers()
-
-    def layers(self):
-        """Yield all our layers of stacks"""
-        if not self.layered:
-            self.create_layers()
-
-        for layer in self.layered:
-            yield [(name, self.stacks[name]) for name in layer]
+        self._layered = []
 
     def reset(self):
         """Make a clean slate (initialize layered and accounted on the instance)"""
-        self.layered = []
         self.accounted = {}
+        self._layered = []
 
-    def create_layers(self):
-        """
-        Populate the layered data structure
-        """
-        self.reset()
-        for name in sorted(self.stacks):
-            self.add_to_layers(name)
+    @property
+    def layered(self):
+        """Yield list of [[(name, stack), ...], [(name, stack), ...], ...]"""
+        result = []
+        for layer in self._layered:
+            nxt = []
+            for name in layer:
+                nxt.append((name, self.stacks[name]))
+            result.append(nxt)
+        return result
+
+    def add_all_to_layers(self):
+        """Add all the stacks to layered"""
+        for stack in sorted(self.stacks):
+            self.add_to_layers(stack)
 
     def add_to_layers(self, name, chain=None):
+        layered = self._layered
+
         if name not in self.accounted:
             self.accounted[name] = True
         else:
@@ -80,13 +65,13 @@ class StackLayers(object):
 
         layer = 0
         for dependency in self.stacks[name].dependencies:
-            for index, deps in enumerate(self.layered):
+            for index, deps in enumerate(layered):
                 if dependency in deps:
                     if layer <= index:
                         layer = index + 1
                     continue
 
-        if len(self.layered) == layer:
-            self.layered.append([])
-        self.layered[layer].append(name)
+        if len(layered) == layer:
+            layered.append([])
+        layered[layer].append(name)
 
