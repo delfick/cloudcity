@@ -1,13 +1,7 @@
-from cloudcity.errors import MissingMandatoryOptions, CloudCityError, BadOptionFormat
-from cloudcity.configurations import ConfigurationResolver, ConfigurationFinder
-from cloudcity.resolution.resolver import StackResolver
-from cloudcity.layers import Layers
-
+from cloudcity.bootstrap import BootStrapper
+from cloudcity.errors import CloudCityError
 
 from rainbow_logging_handler import RainbowLoggingHandler
-from option_merge import MergedOptions
-from collections import defaultdict
-
 import argparse
 import logging
 import sys
@@ -107,36 +101,8 @@ def get_parser():
 
     return parser
 
-def investigate_required_keys(stacks):
-    """Make sure all the formatted keys format to keys that will be available"""
-    not_found = []
-    dependencies = defaultdict(set)
-
-    for name, stack in stacks.items():
-        for needing, requiring in stack.find_required_keys():
-            for required in requiring:
-                stack_name, required_key = required.split(".", 1)
-                if not stacks[stack_name].check_option_availablity(required_key):
-                    not_found.append([name, needing, required])
-                else:
-                    dependencies[name].add(stack_name)
-
-    if not_found:
-        for name, needing, required in not_found:
-            log.error("The '%s' key in the '%s' stack requires the %s key", needing, name, required)
-        raise BadOptionFormat("Missing required keys", missing=len(not_found))
-
-    for name, required in dependencies.items():
-        stacks[name].add_dependencies(list(required))
-
-def deploy(stack, options, stack_resolver):
+def deploy(layers):
     """Deploy a particular stack and all it's dependencies"""
-    stacks = {name:stack_resolver.resolve(name, options[name]) for name in options}
-    investigate_required_keys(stacks)
-
-    layers = Layers(stacks)
-    layers.add_to_layers(stack)
-
     for layer in layers.layered:
         for stack_name, stack_obj in layer:
             log.info("Deploying %s", stack_name)
@@ -147,7 +113,16 @@ def main(argv=None):
     setup_logging()
 
     try:
-        execute(args)
+        bootstrap = BootStrapper()
+        forced = bootstrap.determine_forced_options(args.options, args)
+        if forced:
+            log.info("Setting some options: %s", ' | '.join("[{}:{}]".format(key, val) for key, val in forced.as_flat()))
+
+        log.info("Looking in %s for configuration", args.configs)
+        resolved = bootstrap.find_configurations(args.configs, forced)
+
+        layers = bootstrap.get_layers(resolved, args.execute)
+        deploy(layers)
     except CloudCityError as error:
         print ""
         print "!" * 80
@@ -155,45 +130,9 @@ def main(argv=None):
         print "\t{0}".format(error)
         sys.exit(1)
 
-def execute(args):
-    # Get all the forced_global options
-    forced = MergedOptions.using({"global": {"configs": args.configs, "no_resolve": True}})
-
-    if args.options:
-        for key, val in args.options:
-            forced[key] = val
-
-    for key in 'environment', 'resolve_order', 'dry_run', 'mandatory_options':
-        if getattr(args, key, None):
-            forced["global"][key] = getattr(args, key)
-
-    # Find all our configuration
-    log.info("Looking in %s for configuration", args.configs)
-
-    # Get a dictionary of stacks from our configuration
-    if forced:
-        log.info("Setting some options: %s", ' | '.join("[{}:{}]".format(key, val) for key, val in forced.as_flat()))
-    finder = ConfigurationFinder(args.configs)
-    resolved = ConfigurationResolver(finder, forced).resolved()
-
-    # Make sure we have all the mandatory options
-    not_present = []
-    for option in resolved["global"].get("mandatory_options", []):
-        if not resolved.get(option):
-            not_present.append(option)
-
-    if not_present:
-        raise MissingMandatoryOptions(missing=not_present)
-
-    if args.execute not in resolved:
-        raise CloudCityError("Missing stack", available=resolved.keys(), wanted=args.execute)
-
-    resolver = StackResolver()
-    resolver.register_defaults()
-    deploy(args.execute, resolved, resolver)
-
 if __name__ == '__main__':
     try:
         main()
     except KeyboardInterrupt:
         pass
+
