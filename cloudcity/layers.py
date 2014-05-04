@@ -1,12 +1,12 @@
 from cloudcity.errors import StackDepCycle
 
-class StackLayers(object):
+class Layers(object):
     """
     Used to order the creation of many stacks.
 
     Usage::
 
-        layers = StackLayers({"stack1": stack1, "stack2": "stack2, "stack3": stack3, "stack4": stack4})
+        layers = Layers({"stack1": stack1, "stack2": "stack2, "stack3": stack3, "stack4": stack4})
         layers.add_to_layers("stack3")
         for layer in layers.layered:
             # might get something like

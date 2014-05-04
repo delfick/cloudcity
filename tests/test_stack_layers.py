@@ -1,7 +1,7 @@
 # coding: spec
 
-from cloudcity.stack_layers import StackLayers
 from cloudcity.errors import StackDepCycle
+from cloudcity.layers import Layers
 
 from noseOfYeti.tokeniser.support import noy_sup_setUp, noy_sup_tearDown
 from unittest import TestCase
@@ -15,7 +15,7 @@ describe TestCase, "StackLayer":
         self.stack2 = mock.Mock(name="stack2")
         self.stack3 = mock.Mock(name="stack3")
         self.stacks = {'stack1': self.stack1, 'stack2': self.stack2, 'stack3': self.stack3}
-        self.instance = StackLayers(self.stacks)
+        self.instance = Layers(self.stacks)
 
     def assertCallsSame(self, mock, expected):
         print "Printing calls as <done> || <expected>"
@@ -31,7 +31,7 @@ describe TestCase, "StackLayer":
 
     it "takes a dictionary of stacks":
         stacks = mock.Mock(name="stacks")
-        layers = StackLayers(stacks)
+        layers = Layers(stacks)
         self.assertIs(layers.stacks, stacks)
 
     describe "Resetting the instance":
@@ -60,7 +60,7 @@ describe TestCase, "StackLayer":
                 obj.dependencies = []
                 setattr(self, name, obj)
                 self.stacks[name] = obj
-            self.instance = StackLayers(self.stacks)
+            self.instance = Layers(self.stacks)
 
         def assertLayeredSame(self, layers, expected):
             if not layers.layered:
