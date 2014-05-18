@@ -13,28 +13,6 @@ log = logging.getLogger("Bootstrap")
 class BootStrapper(object):
     """Knows how to bootstrap our configuration"""
 
-    def investigate_required_keys(self, stacks):
-        """Make sure all the formatted keys format to keys that will be available"""
-        not_found = []
-        dependencies = defaultdict(set)
-
-        for name, stack in stacks.items():
-            for needing, requiring in stack.find_required_keys():
-                for required in requiring:
-                    stack_name, required_key = required.split(".", 1)
-                    if not stacks[stack_name].check_option_availablity(required_key):
-                        not_found.append([name, needing, required])
-                    else:
-                        dependencies[name].add(stack_name)
-
-        if not_found:
-            for name, needing, required in not_found:
-                log.error("The '%s' key in the '%s' stack requires the %s key", needing, name, required)
-            raise BadOptionFormat("Missing required keys", missing=len(not_found))
-
-        for name, required in dependencies.items():
-            stacks[name].add_dependencies(list(required))
-
     def find_configurations(self, configs, forced_options):
         """Find all the configurations from disk and return as a MergedOptions"""
         finder = ConfigurationFinder(configs)
@@ -66,4 +44,26 @@ class BootStrapper(object):
         layers.add_to_layers(target)
 
         return layers
+
+    def investigate_required_keys(self, stacks):
+        """Make sure all the formatted keys format to keys that will be available"""
+        not_found = []
+        dependencies = defaultdict(set)
+
+        for name, stack in stacks.items():
+            for needing, requiring in stack.find_required_keys():
+                for required in requiring:
+                    stack_name, required_key = required.split(".", 1)
+                    if not stacks[stack_name].check_option_availablity(required_key):
+                        not_found.append([name, needing, required])
+                    else:
+                        dependencies[name].add(stack_name)
+
+        if not_found:
+            for name, needing, required in not_found:
+                log.error("The '%s' key in the '%s' stack requires the %s key", needing, name, required)
+            raise BadOptionFormat("Missing required keys", missing=len(not_found))
+
+        for name, required in dependencies.items():
+            stacks[name].add_dependencies(list(required))
 
