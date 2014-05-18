@@ -2,6 +2,7 @@ from cloudcity.bootstrap import BootStrapper
 from cloudcity.errors import CloudCityError
 
 from rainbow_logging_handler import RainbowLoggingHandler
+from option_merge import MergedOptions
 import argparse
 import logging
 import sys
@@ -114,12 +115,19 @@ def main(argv=None):
 
     try:
         bootstrap = BootStrapper()
-        forced = bootstrap.determine_forced_options(args.options, args)
+        glbls = MergedOptions.using({"global": {"no_resolve": True}})
+
+        forced = MergedOptions.using(
+              MergedOptions.KeyValuePairs(args.options or [])
+            , MergedOptions.Attributes(args, ("environment", "resolve_order", "dry_run", "mandatory_options"), lift="global", ignoreable_values=(None, ))
+            )
+
         if forced:
             log.info("Setting some options: %s", ' | '.join("[{}:{}]".format(key, val) for key, val in forced.as_flat()))
+            glbls.options.extend(forced.options)
 
         log.info("Looking in %s for configuration", args.configs)
-        resolved = bootstrap.find_configurations(args.configs, forced)
+        resolved = bootstrap.find_configurations(args.configs, glbls)
 
         layers = bootstrap.get_layers(resolved, args.execute)
         deploy(layers)

@@ -35,20 +35,6 @@ class BootStrapper(object):
         for name, required in dependencies.items():
             stacks[name].add_dependencies(list(required))
 
-    def determine_forced_options(self, options, other_options):
-        """Find what options we want to force"""
-        forced = MergedOptions.using({"global": {"no_resolve": True}})
-
-        if options:
-            for key, val in options:
-                forced[key] = val
-
-        for key in 'environment', 'resolve_order', 'dry_run', 'mandatory_options':
-            if getattr(other_options, key, None):
-                forced["global"][key] = getattr(other_options, key)
-
-        return forced
-
     def find_configurations(self, configs, forced_options):
         """Find all the configurations from disk and return as a MergedOptions"""
         finder = ConfigurationFinder(configs)
